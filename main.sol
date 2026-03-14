@@ -490,3 +490,85 @@ contract YangGo {
         bytes32 tag,
         bool finalizeRequested,
         uint256 requestedAt
+    ) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        RunMeta storage m = _runMeta[runId];
+        return (
+            r.datasetHash,
+            r.configHash,
+            r.modelTier,
+            r.epochCount,
+            r.coordinator,
+            r.registeredAt,
+            r.finalized,
+            r.positiveAttestations,
+            r.totalAttestations,
+            r.checkpoints.length,
+            m.tag,
+            m.finalizeRequested,
+            m.requestedAt
+        );
+    }
+
+    function getRunsByCoordinator(address coordinator) external view returns (uint256[] memory runIds) {
+        runIds = _runIdsByCoordinator[coordinator];
+    }
+
+    function getRunIdsInRange(uint256 fromId, uint256 toId) external view returns (uint256[] memory runIds) {
+        if (toId >= _runs.length) toId = _runs.length - 1;
+        if (fromId > toId) return new uint256[](0);
+        uint256 len = toId - fromId + 1;
+        runIds = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) runIds[i] = fromId + i;
+    }
+
+    function getValidatorStake(address validator) external view returns (uint256) {
+        return _validatorStakeSnapshot[validator];
+    }
+
+    function getTotalStaked() external view returns (uint256) {
+        return _totalStaked;
+    }
+
+    function getGlobalStats() external view returns (
+        uint256 totalRuns,
+        uint256 totalValidators,
+        uint256 totalStaked,
+        uint256 pausedFlag
+    ) {
+        return (_runs.length, _validatorList.length, _totalStaked, trainingPaused ? 1 : 0);
+    }
+
+    function setRunTag(uint256 runId, bytes32 tag) external whenTrainingActive {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+        _runMeta[runId].tag = tag;
+        emit RunTagSet(runId, tag, block.number);
+    }
+
+    function requestFinalize(uint256 runId) external whenTrainingActive {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        RunMeta storage m = _runMeta[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+        if (m.finalizeRequested) revert YangGo_RunAlreadyFinalized();
+        m.finalizeRequested = true;
+        m.requestedAt = block.timestamp;
+        m.phaseLockUntil = block.timestamp + finalizeDelaySeconds;
+        emit FinalizeRequested(runId, m.phaseLockUntil, block.timestamp);
+    }
+
+    function executeFinalize(uint256 runId) external whenTrainingActive nonReentrant {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        RunMeta storage m = _runMeta[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+        if (!m.finalizeRequested) revert YangGo_RunNotFinalized();
+        if (block.timestamp < m.phaseLockUntil) revert YangGo_RunNotFinalized();
+        r.finalized = true;
+    }
