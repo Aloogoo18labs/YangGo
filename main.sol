@@ -408,3 +408,85 @@ contract YangGo {
         bool finalized,
         uint256 positiveAttestations,
         uint256 totalAttestations,
+        uint256 checkpointCount
+    ) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        return (
+            r.datasetHash,
+            r.configHash,
+            r.modelTier,
+            r.epochCount,
+            r.coordinator,
+            r.registeredAt,
+            r.finalized,
+            r.positiveAttestations,
+            r.totalAttestations,
+            r.checkpoints.length
+        );
+    }
+
+    function getCheckpoint(uint256 runId, uint256 index) external view returns (bytes32) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (index >= r.checkpoints.length) revert YangGo_CheckpointIndexOutOfRange();
+        return r.checkpoints[index];
+    }
+
+    function runCount() external view returns (uint256) {
+        return _runs.length;
+    }
+
+    function validatorCount() external view returns (uint256) {
+        return _validatorList.length;
+    }
+
+    function getValidatorAt(uint256 index) external view returns (address) {
+        if (index >= _validatorList.length) revert YangGo_CheckpointIndexOutOfRange();
+        return _validatorList[index];
+    }
+
+    function hasAttested(uint256 runId, address validator) external view returns (bool) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _validators[validator].attestedRuns[runId];
+    }
+
+    function quorumReached(uint256 runId) external view returns (bool) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.totalAttestations == 0) return false;
+        uint256 activeCount = _validatorList.length;
+        if (activeCount == 0) return false;
+        return (r.totalAttestations * BPS_DENOM) >= (activeCount * QUORUM_BPS);
+    }
+
+    function positiveQuorumReached(uint256 runId) external view returns (bool) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        uint256 activeCount = _validatorList.length;
+        if (activeCount == 0) return false;
+        if (r.totalAttestations == 0) return false;
+        if ((r.totalAttestations * BPS_DENOM) < (activeCount * QUORUM_BPS)) return false;
+        return (r.positiveAttestations * BPS_DENOM) >= (r.totalAttestations * QUORUM_BPS);
+    }
+
+    function getRunMeta(uint256 runId) external view returns (bytes32 tag, uint256 phaseLockUntil, bool finalizeRequested, uint256 requestedAt) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        RunMeta storage m = _runMeta[runId];
+        return (m.tag, m.phaseLockUntil, m.finalizeRequested, m.requestedAt);
+    }
+
+    function getRunFull(uint256 runId) external view returns (
+        bytes32 datasetHash,
+        bytes32 configHash,
+        uint8 modelTier,
+        uint256 epochCount,
+        address coordinator,
+        uint256 registeredAt,
+        bool finalized,
+        uint256 positiveAttestations,
+        uint256 totalAttestations,
+        uint256 checkpointCount,
+        bytes32 tag,
+        bool finalizeRequested,
+        uint256 requestedAt
