@@ -572,3 +572,85 @@ contract YangGo {
         if (block.timestamp < m.phaseLockUntil) revert YangGo_RunNotFinalized();
         r.finalized = true;
     }
+
+    function addConfigPreset(bytes32 presetId, bytes32 configHash, string calldata label, uint8 modelTier, uint256 suggestedEpochs) external onlyGovernor {
+        _configPresets[presetId] = ConfigPreset({
+            configHash: configHash,
+            label: label,
+            modelTier: modelTier,
+            suggestedEpochs: suggestedEpochs,
+            active: true
+        });
+        _presetIds.push(presetId);
+        emit PresetAdded(presetId, configHash, label, block.timestamp);
+    }
+
+    function disableConfigPreset(bytes32 presetId) external onlyGovernor {
+        if (!_configPresets[presetId].active) revert YangGo_InvalidRunId();
+        _configPresets[presetId].active = false;
+        emit PresetDisabled(presetId, block.timestamp);
+    }
+
+    function getPreset(bytes32 presetId) external view returns (bytes32 configHash, string memory label, uint8 modelTier, uint256 suggestedEpochs, bool active) {
+        ConfigPreset storage p = _configPresets[presetId];
+        return (p.configHash, p.label, p.modelTier, p.suggestedEpochs, p.active);
+    }
+
+    function getPresetIds() external view returns (bytes32[] memory) {
+        return _presetIds;
+    }
+
+    function presetCount() external view returns (uint256) {
+        return _presetIds.length;
+    }
+
+    function attestRunBatch(uint256[] calldata runIds, bool[] calldata approved) external whenTrainingActive nonReentrant {
+        if (runIds.length != approved.length) revert YangGo_ArrayLengthMismatch();
+        ValidatorState storage vs = _validators[msg.sender];
+        if (!vs.active) revert YangGo_ValidatorNotRegistered();
+        for (uint256 i = 0; i < runIds.length; i++) {
+            uint256 runId = runIds[i];
+            if (runId >= _runs.length) revert YangGo_InvalidRunId();
+            if (vs.attestedRuns[runId]) revert YangGo_AlreadyAttested();
+            TrainingRun storage r = _runs[runId];
+            if (!r.finalized) revert YangGo_RunNotFinalized();
+            vs.attestedRuns[runId] = true;
+            r.totalAttestations++;
+            if (approved[i]) r.positiveAttestations++;
+            emit ValidatorAttestation(runId, msg.sender, approved[i], block.timestamp);
+        }
+    }
+
+    function getPhase(uint256 runId) external view returns (RunPhase) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.finalized) return RunPhase.Finalized;
+        RunMeta storage m = _runMeta[runId];
+        if (m.finalizeRequested && block.timestamp >= m.phaseLockUntil) return RunPhase.AttestationPhase;
+        if (m.finalizeRequested) return RunPhase.AttestationPhase;
+        if (r.checkpoints.length > 0) return RunPhase.CheckpointPhase;
+        return RunPhase.Draft;
+    }
+
+    // -------------------------------------------------------------------------
+    // GOVERNOR
+    // -------------------------------------------------------------------------
+
+    function setCoordinatorWhitelist(address account, bool allowed) external onlyGovernor {
+        if (account == address(0)) revert YangGo_ZeroAddress();
+        coordinatorWhitelist[account] = allowed;
+        if (allowed) emit CoordinatorWhitelisted(account, msg.sender, block.timestamp);
+        else emit CoordinatorRemoved(account, msg.sender, block.timestamp);
+    }
+
+    function setMaxEpochsPerRun(uint256 newMax) external onlyGovernor {
+        if (newMax < MIN_EPOCHS) revert YangGo_InvalidEpochCount();
+        uint256 prev = maxEpochsPerRun;
+        maxEpochsPerRun = newMax;
+        emit EpochLimitUpdated(prev, newMax, block.timestamp);
+    }
+
+    function setRegistrationFee(uint256 newFeeWei) external onlyGovernor {
+        registrationFeeWei = newFeeWei;
+    }
+
