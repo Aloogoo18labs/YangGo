@@ -80,3 +80,85 @@ contract YangGo {
     uint256 public constant MAX_EPOCHS_DEFAULT = 10000;
     uint256 public constant MIN_VALIDATOR_STAKE = 0.1 ether;
     uint256 public constant QUORUM_BPS = 6600;
+    uint256 public constant BPS_DENOM = 10000;
+    uint256 public constant MAX_CHECKPOINTS_PER_RUN = 256;
+    uint256 public constant MAX_BATCH_REGISTER = 24;
+    bytes32 public constant YANGGO_DOMAIN = keccak256("YangGo.TrainingRun.v2");
+
+    // -------------------------------------------------------------------------
+    // IMMUTABLES
+    // -------------------------------------------------------------------------
+
+    address public immutable governor;
+    address public immutable feeCollector;
+    address public immutable rewardPool;
+
+    // -------------------------------------------------------------------------
+    // STATE
+    // -------------------------------------------------------------------------
+
+    struct TrainingRun {
+        bytes32 datasetHash;
+        bytes32 configHash;
+        uint8 modelTier;
+        uint256 epochCount;
+        address coordinator;
+        uint256 registeredAt;
+        bool finalized;
+        uint256 positiveAttestations;
+        uint256 totalAttestations;
+        bytes32[] checkpoints;
+    }
+
+    struct ValidatorState {
+        uint256 stake;
+        bool active;
+        mapping(uint256 => bool) attestedRuns;
+    }
+
+    mapping(address => bool) public coordinatorWhitelist;
+    mapping(address => ValidatorState) private _validators;
+    address[] private _validatorList;
+    TrainingRun[] private _runs;
+    uint256 public maxEpochsPerRun = 5000;
+    uint256 public registrationFeeWei = 0.01 ether;
+    bool public trainingPaused;
+    uint256 private _lock;
+
+    enum RunPhase { Draft, CheckpointPhase, AttestationPhase, Finalized }
+    struct RunMeta {
+        bytes32 tag;
+        uint256 phaseLockUntil;
+        bool finalizeRequested;
+        uint256 requestedAt;
+    }
+    struct ConfigPreset {
+        bytes32 configHash;
+        string label;
+        uint8 modelTier;
+        uint256 suggestedEpochs;
+        bool active;
+    }
+
+    mapping(uint256 => RunMeta) private _runMeta;
+    mapping(bytes32 => ConfigPreset) private _configPresets;
+    bytes32[] private _presetIds;
+    uint256 public finalizeDelaySeconds = 3600;
+    uint256 public constant MIN_FINALIZE_DELAY = 300;
+    uint256 public constant MAX_FINALIZE_DELAY = 604800;
+    uint256 public constant TIER_BASE_FEE_MULTIPLIER = 10000;
+    uint256 public constant TIER_MID_FEE_MULTIPLIER = 12000;
+    uint256 public constant TIER_LARGE_FEE_MULTIPLIER = 15000;
+    uint256 public constant TIER_XL_FEE_MULTIPLIER = 20000;
+    uint256 public constant FEE_MULTIPLIER_DENOM = 10000;
+    uint256 public constant MAX_TAG_LENGTH_BYTES = 32;
+    uint256 public constant EPOCH_BUCKET_SMALL = 10;
+    uint256 public constant EPOCH_BUCKET_MED = 100;
+    uint256 public constant EPOCH_BUCKET_LARGE = 500;
+    uint256 public constant EPOCH_BUCKET_XL = 1000;
+    mapping(address => uint256[]) private _runIdsByCoordinator;
+    uint256 private _totalStaked;
+    mapping(address => uint256) private _validatorStakeSnapshot;
+
+    event RunTagSet(uint256 indexed runId, bytes32 tag, uint256 atBlock);
+    event FinalizeRequested(uint256 indexed runId, uint256 executeAfter, uint256 atBlock);
