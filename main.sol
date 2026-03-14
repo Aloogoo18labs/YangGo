@@ -162,3 +162,85 @@ contract YangGo {
 
     event RunTagSet(uint256 indexed runId, bytes32 tag, uint256 atBlock);
     event FinalizeRequested(uint256 indexed runId, uint256 executeAfter, uint256 atBlock);
+    event PresetAdded(bytes32 indexed presetId, bytes32 configHash, string label, uint256 atBlock);
+    event PresetDisabled(bytes32 indexed presetId, uint256 atBlock);
+
+    // -------------------------------------------------------------------------
+    // CONSTRUCTOR
+    // -------------------------------------------------------------------------
+
+    constructor() {
+        governor = 0x7f3a91c2e5b4d806f9b0c1e3d5a7f2e8c4b6a0d9;
+        feeCollector = 0x2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d0e2f4a6b8;
+        rewardPool = 0x9e8d7c6b5a493827160504938271605049382716;
+        coordinatorWhitelist[0x5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6] = true;
+        coordinatorWhitelist[0xa1b2c3d4e5f60718293a4b5c6d7e8f9012345678] = true;
+    }
+
+    // -------------------------------------------------------------------------
+    // MODIFIERS
+    // -------------------------------------------------------------------------
+
+    modifier onlyGovernor() {
+        if (msg.sender != governor) revert YangGo_NotGovernor();
+        _;
+    }
+
+    modifier onlyWhitelistedCoordinator() {
+        if (!coordinatorWhitelist[msg.sender]) revert YangGo_CoordinatorNotWhitelisted();
+        _;
+    }
+
+    modifier whenTrainingActive() {
+        if (trainingPaused) revert YangGo_TrainingPaused();
+        _;
+    }
+
+    modifier nonReentrant() {
+        if (_lock != 0) revert YangGo_Reentrancy();
+        _lock = 1;
+        _;
+        _lock = 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDINATOR: REGISTER RUN
+    // -------------------------------------------------------------------------
+
+    function registerRun(
+        bytes32 datasetHash,
+        bytes32 configHash,
+        uint8 modelTier,
+        uint256 epochCount
+    ) external payable onlyWhitelistedCoordinator whenTrainingActive nonReentrant returns (uint256 runId) {
+        if (datasetHash == bytes32(0)) revert YangGo_ZeroHash();
+        if (configHash == bytes32(0)) revert YangGo_ZeroHash();
+        if (modelTier == 0 || modelTier > MAX_MODEL_TIER) revert YangGo_InvalidModelTier();
+        if (epochCount < MIN_EPOCHS || epochCount > maxEpochsPerRun) revert YangGo_InvalidEpochCount();
+        if (msg.value < registrationFeeWei) revert YangGo_InsufficientPayment();
+
+        _runs.push(TrainingRun({
+            datasetHash: datasetHash,
+            configHash: configHash,
+            modelTier: modelTier,
+            epochCount: epochCount,
+            coordinator: msg.sender,
+            registeredAt: block.timestamp,
+            finalized: false,
+            positiveAttestations: 0,
+            totalAttestations: 0,
+            checkpoints: new bytes32[](0)
+        }));
+        runId = _runs.length - 1;
+        _runIdsByCoordinator[msg.sender].push(runId);
+        _runMeta[runId] = RunMeta({ tag: bytes32(0), phaseLockUntil: 0, finalizeRequested: false, requestedAt: 0 });
+
+        (bool sent,) = feeCollector.call{value: registrationFeeWei}("");
+        if (!sent) revert YangGo_TransferFailed();
+        if (msg.value > registrationFeeWei) {
+            (bool extra,) = msg.sender.call{value: msg.value - registrationFeeWei}("");
+            if (!extra) revert YangGo_TransferFailed();
+        }
+
+        emit RunRegistered(runId, datasetHash, configHash, modelTier, epochCount, msg.sender, block.timestamp);
+        emit FeeCollected(msg.sender, registrationFeeWei, block.timestamp);
