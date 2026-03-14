@@ -326,3 +326,85 @@ contract YangGo {
     // -------------------------------------------------------------------------
     // COORDINATOR: FINALIZE RUN
     // -------------------------------------------------------------------------
+
+    function finalizeRun(uint256 runId) external whenTrainingActive nonReentrant {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+
+        r.finalized = true;
+    }
+
+    // -------------------------------------------------------------------------
+    // VALIDATOR: REGISTER / UNREGISTER
+    // -------------------------------------------------------------------------
+
+    function registerValidator() external payable nonReentrant {
+        if (msg.value < MIN_VALIDATOR_STAKE) revert YangGo_MinStakeRequired();
+        ValidatorState storage vs = _validators[msg.sender];
+        if (vs.active) revert YangGo_ValidatorNotRegistered();
+
+        vs.stake = msg.value;
+        vs.active = true;
+        _validatorStakeSnapshot[msg.sender] = msg.value;
+        _totalStaked += msg.value;
+        _validatorList.push(msg.sender);
+        emit ValidatorRegistered(msg.sender, msg.value, block.timestamp);
+    }
+
+    function unregisterValidator() external nonReentrant {
+        ValidatorState storage vs = _validators[msg.sender];
+        if (!vs.active) revert YangGo_ValidatorNotRegistered();
+
+        vs.active = false;
+        uint256 amount = vs.stake;
+        vs.stake = 0;
+        _totalStaked -= amount;
+        _validatorStakeSnapshot[msg.sender] = 0;
+        for (uint256 i = 0; i < _validatorList.length; i++) {
+            if (_validatorList[i] == msg.sender) {
+                _validatorList[i] = _validatorList[_validatorList.length - 1];
+                _validatorList.pop();
+                break;
+            }
+        }
+        (bool sent,) = msg.sender.call{value: amount}("");
+        if (!sent) revert YangGo_TransferFailed();
+        emit ValidatorUnregistered(msg.sender, block.timestamp);
+    }
+
+    // -------------------------------------------------------------------------
+    // VALIDATOR: ATTEST
+    // -------------------------------------------------------------------------
+
+    function attestRun(uint256 runId, bool approved) external whenTrainingActive nonReentrant {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        ValidatorState storage vs = _validators[msg.sender];
+        if (!vs.active) revert YangGo_ValidatorNotRegistered();
+        if (vs.attestedRuns[runId]) revert YangGo_AlreadyAttested();
+
+        TrainingRun storage r = _runs[runId];
+        if (!r.finalized) revert YangGo_RunNotFinalized();
+
+        vs.attestedRuns[runId] = true;
+        r.totalAttestations++;
+        if (approved) r.positiveAttestations++;
+
+        emit ValidatorAttestation(runId, msg.sender, approved, block.timestamp);
+    }
+
+    // -------------------------------------------------------------------------
+    // VIEWS
+    // -------------------------------------------------------------------------
+
+    function getRun(uint256 runId) external view returns (
+        bytes32 datasetHash,
+        bytes32 configHash,
+        uint8 modelTier,
+        uint256 epochCount,
+        address coordinator,
+        uint256 registeredAt,
+        bool finalized,
+        uint256 positiveAttestations,
+        uint256 totalAttestations,
