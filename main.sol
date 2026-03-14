@@ -244,3 +244,85 @@ contract YangGo {
 
         emit RunRegistered(runId, datasetHash, configHash, modelTier, epochCount, msg.sender, block.timestamp);
         emit FeeCollected(msg.sender, registrationFeeWei, block.timestamp);
+    }
+
+    function registerRunBatch(
+        bytes32[] calldata datasetHashes,
+        bytes32[] calldata configHashes,
+        uint8[] calldata modelTiers,
+        uint256[] calldata epochCounts
+    ) external payable onlyWhitelistedCoordinator whenTrainingActive nonReentrant returns (uint256[] memory runIds) {
+        uint256 n = datasetHashes.length;
+        if (n != configHashes.length || n != modelTiers.length || n != epochCounts.length) revert YangGo_ArrayLengthMismatch();
+        if (n > MAX_BATCH_REGISTER) revert YangGo_InvalidBatchSize();
+
+        uint256 totalFee = registrationFeeWei * n;
+        if (msg.value < totalFee) revert YangGo_InsufficientPayment();
+
+        runIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            if (datasetHashes[i] == bytes32(0) || configHashes[i] == bytes32(0)) revert YangGo_ZeroHash();
+            if (modelTiers[i] == 0 || modelTiers[i] > MAX_MODEL_TIER) revert YangGo_InvalidModelTier();
+            if (epochCounts[i] < MIN_EPOCHS || epochCounts[i] > maxEpochsPerRun) revert YangGo_InvalidEpochCount();
+
+            _runs.push(TrainingRun({
+                datasetHash: datasetHashes[i],
+                configHash: configHashes[i],
+                modelTier: modelTiers[i],
+                epochCount: epochCounts[i],
+                coordinator: msg.sender,
+                registeredAt: block.timestamp,
+                finalized: false,
+                positiveAttestations: 0,
+                totalAttestations: 0,
+                checkpoints: new bytes32[](0)
+            }));
+            runIds[i] = _runs.length - 1;
+            _runIdsByCoordinator[msg.sender].push(runIds[i]);
+            _runMeta[runIds[i]] = RunMeta({ tag: bytes32(0), phaseLockUntil: 0, finalizeRequested: false, requestedAt: 0 });
+            emit RunRegistered(runIds[i], datasetHashes[i], configHashes[i], modelTiers[i], epochCounts[i], msg.sender, block.timestamp);
+        }
+
+        (bool sent,) = feeCollector.call{value: totalFee}("");
+        if (!sent) revert YangGo_TransferFailed();
+        if (msg.value > totalFee) {
+            (bool extra,) = msg.sender.call{value: msg.value - totalFee}("");
+            if (!extra) revert YangGo_TransferFailed();
+        }
+        emit FeeCollected(msg.sender, totalFee, block.timestamp);
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDINATOR: ATTACH CHECKPOINTS
+    // -------------------------------------------------------------------------
+
+    function attachCheckpoint(uint256 runId, bytes32 checkpointHash) external whenTrainingActive nonReentrant {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+        if (checkpointHash == bytes32(0)) revert YangGo_ZeroHash();
+        if (r.checkpoints.length >= MAX_CHECKPOINTS_PER_RUN) revert YangGo_CheckpointIndexOutOfRange();
+
+        r.checkpoints.push(checkpointHash);
+        emit CheckpointAttached(runId, r.checkpoints.length - 1, checkpointHash, block.number);
+    }
+
+    function attachCheckpointBatch(uint256 runId, bytes32[] calldata checkpointHashes) external whenTrainingActive nonReentrant {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        if (r.coordinator != msg.sender) revert YangGo_NotCoordinator();
+        if (r.finalized) revert YangGo_RunAlreadyFinalized();
+        uint256 addCount = checkpointHashes.length;
+        if (r.checkpoints.length + addCount > MAX_CHECKPOINTS_PER_RUN) revert YangGo_CheckpointIndexOutOfRange();
+
+        for (uint256 i = 0; i < addCount; i++) {
+            if (checkpointHashes[i] == bytes32(0)) revert YangGo_ZeroHash();
+            r.checkpoints.push(checkpointHashes[i]);
+            emit CheckpointAttached(runId, r.checkpoints.length - 1, checkpointHashes[i], block.number);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDINATOR: FINALIZE RUN
+    // -------------------------------------------------------------------------
