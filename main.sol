@@ -1064,3 +1064,85 @@ contract YangGoRunQuery {
         uint256 end = fromId + limit;
         if (end > total) end = total;
         uint256 n = end - fromId;
+        runIds = new uint256[](n);
+        positiveQuorum = new bool[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 runId = fromId + i;
+            runIds[i] = runId;
+            positiveQuorum[i] = core.positiveQuorumReached(runId);
+        }
+    }
+
+    function getAllValidatorAddresses() external view returns (address[] memory addrs) {
+        uint256 count = core.validatorCount();
+        addrs = new address[](count);
+        for (uint256 i = 0; i < count; i++) addrs[i] = core.getValidatorAt(i);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Reward Calculator - Pure view logic for potential reward distribution.
+// -----------------------------------------------------------------------------
+
+contract YangGoRewardCalculator {
+
+    uint256 public constant BPS_DENOM = 10000;
+    uint256 public constant QUORUM_BPS = 6600;
+
+    struct RunRewardInfo {
+        uint256 runId;
+        bool quorumReached;
+        bool positiveQuorum;
+        uint256 positiveAttestations;
+        uint256 totalAttestations;
+        uint256 validatorCount;
+    }
+
+    function computeRunRewardInfo(
+        uint256 runId,
+        uint256 positiveAttestations,
+        uint256 totalAttestations,
+        uint256 validatorCount
+    ) external pure returns (RunRewardInfo memory info) {
+        info.runId = runId;
+        info.positiveAttestations = positiveAttestations;
+        info.totalAttestations = totalAttestations;
+        info.validatorCount = validatorCount;
+        info.quorumReached = validatorCount > 0 && (totalAttestations * BPS_DENOM) >= (validatorCount * QUORUM_BPS);
+        info.positiveQuorum = info.quorumReached && (positiveAttestations * BPS_DENOM) >= (totalAttestations * QUORUM_BPS);
+    }
+
+    function computeTierMultiplier(uint8 modelTier) external pure returns (uint256 multiplierBps) {
+        if (modelTier == 1) return 10000;
+        if (modelTier == 2) return 12000;
+        if (modelTier == 3) return 15000;
+        if (modelTier == 4) return 20000;
+        return 10000;
+    }
+
+    function computeEpochScore(uint256 epochCount) external pure returns (uint256 score) {
+        if (epochCount <= 10) return 1000;
+        if (epochCount <= 100) return 2000;
+        if (epochCount <= 500) return 5000;
+        if (epochCount <= 1000) return 8000;
+        return 10000;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Epoch Tracker - Optional per-run epoch completion flags (gas-heavy, use off-chain when possible).
+// -----------------------------------------------------------------------------
+
+contract YangGoEpochTracker {
+
+    event EpochMarkedComplete(uint256 indexed runId, uint256 epochIndex, address indexed marker, uint256 atBlock);
+
+    error YGET_NotCoordinator();
+    error YGET_InvalidRunId();
+    error YGET_RunFinalized();
+    error YGET_EpochOutOfRange();
+    error YGET_Reentrancy();
+
+    IYangGoView public immutable core;
+    uint256 private _lock;
+    mapping(uint256 => mapping(uint256 => bool)) private _epochComplete;
