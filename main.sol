@@ -1556,3 +1556,85 @@ contract YangGoTimeLocks {
     function schedule(bytes32 actionId, uint256 delaySeconds, bytes calldata payload) external {
         if (delaySeconds < MIN_DELAY || delaySeconds > MAX_DELAY) revert();
         uint256 executeAfter = block.timestamp + delaySeconds;
+        _lockedUntil[actionId] = executeAfter;
+        _lockedPayload[actionId] = payload;
+        emit ActionScheduled(actionId, executeAfter, block.timestamp);
+    }
+
+    function canExecute(bytes32 actionId) external view returns (bool) {
+        return block.timestamp >= _lockedUntil[actionId] && _lockedUntil[actionId] != 0;
+    }
+
+    function getExecuteAfter(bytes32 actionId) external view returns (uint256) {
+        return _lockedUntil[actionId];
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Validator Weights - Optional weighting for validators (stub).
+// -----------------------------------------------------------------------------
+
+contract YangGoValidatorWeights {
+
+    IYangGoView public immutable core;
+    mapping(address => uint256) private _weight;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function setWeight(address validator, uint256 weight) external {
+        _weight[validator] = weight;
+    }
+
+    function getWeight(address validator) external view returns (uint256) {
+        return _weight[validator];
+    }
+
+    function getTotalWeight() external view returns (uint256 total) {
+        uint256 n = core.validatorCount();
+        for (uint256 i = 0; i < n; i++) {
+            address v = core.getValidatorAt(i);
+            total += _weight[v];
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Metadata Extension - Optional string metadata per run (off-chain pointer).
+// -----------------------------------------------------------------------------
+
+contract YangGoRunMetadata {
+
+    event MetadataSet(uint256 indexed runId, string uri, uint256 atBlock);
+
+    IYangGoView public immutable core;
+    mapping(uint256 => string) private _metadataUri;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function setMetadata(uint256 runId, string calldata uri) external {
+        (,,,, address coordinator,, bool finalized,,,) = core.getRun(runId);
+        if (msg.sender != coordinator) revert();
+        if (finalized) revert();
+        _metadataUri[runId] = uri;
+        emit MetadataSet(runId, uri, block.timestamp);
+    }
+
+    function getMetadata(uint256 runId) external view returns (string memory) {
+        return _metadataUri[runId];
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Slashing Stub - Placeholder for future slashing logic.
+// -----------------------------------------------------------------------------
+
+contract YangGoSlashingStub {
+
+    event SlashRequested(address indexed validator, uint256 amount, bytes32 reason, uint256 atBlock);
+
+    function requestSlash(address validator, uint256 amount, bytes32 reason) external {
+        emit SlashRequested(validator, amount, reason, block.timestamp);
