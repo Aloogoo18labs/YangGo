@@ -1802,3 +1802,85 @@ contract YangGoRunAge {
     }
 
     function getRunAge(uint256 runId, uint256 asOfTimestamp) external view returns (uint256 ageSeconds) {
+        (, , , , , uint256 registeredAt, , , , ) = core.getRun(runId);
+        if (asOfTimestamp <= registeredAt) return 0;
+        return asOfTimestamp - registeredAt;
+    }
+
+    function getRunAgeNow(uint256 runId) external view returns (uint256 ageSeconds) {
+        (, , , , , uint256 registeredAt, , , , ) = core.getRun(runId);
+        if (block.timestamp <= registeredAt) return 0;
+        return block.timestamp - registeredAt;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Sorter Stub - Off-chain sort keys; on-chain returns run IDs in range.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunSorter {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function getRunIdsInRange(uint256 fromId, uint256 toId) external view returns (uint256[] memory runIds) {
+        uint256 total = core.runCount();
+        if (fromId >= total) return new uint256[](0);
+        if (toId >= total) toId = total - 1;
+        if (fromId > toId) return new uint256[](0);
+        uint256 n = toId - fromId + 1;
+        runIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) runIds[i] = fromId + i;
+    }
+
+    function getRunIdsForCoordinatorPaginated(address coordinator, uint256 offset, uint256 limit) external view returns (uint256[] memory runIds) {
+        uint256[] memory all = core.getRunsByCoordinator(coordinator);
+        if (offset >= all.length) return new uint256[](0);
+        uint256 end = offset + limit;
+        if (end > all.length) end = all.length;
+        uint256 n = end - offset;
+        runIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) runIds[i] = all[offset + i];
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Config Hash Registry - Optional registry of config hashes with labels.
+// -----------------------------------------------------------------------------
+
+contract YangGoConfigHashRegistry {
+
+    event ConfigRegistered(bytes32 indexed configHash, string label, address indexed registrant, uint256 atBlock);
+
+    struct ConfigMeta {
+        string label;
+        address registrant;
+        uint256 registeredAt;
+    }
+
+    mapping(bytes32 => ConfigMeta) private _meta;
+    bytes32[] private _configHashes;
+
+    function registerConfig(bytes32 configHash, string calldata label) external {
+        if (_meta[configHash].registrant != address(0)) revert();
+        _meta[configHash] = ConfigMeta({ label: label, registrant: msg.sender, registeredAt: block.timestamp });
+        _configHashes.push(configHash);
+        emit ConfigRegistered(configHash, label, msg.sender, block.timestamp);
+    }
+
+    function getConfigMeta(bytes32 configHash) external view returns (string memory label, address registrant, uint256 registeredAt) {
+        ConfigMeta storage m = _meta[configHash];
+        return (m.label, m.registrant, m.registeredAt);
+    }
+
+    function getAllConfigHashes() external view returns (bytes32[] memory) {
+        return _configHashes;
+    }
+
+    function configCount() external view returns (uint256) {
+        return _configHashes.length;
+    }
+}
