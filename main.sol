@@ -1392,3 +1392,85 @@ contract YangGoFeeTierHelper {
         if (modelTier == 4) return (BASE_FEE * TIER_4_MUL) / MUL_DENOM;
         return BASE_FEE;
     }
+
+    function computeTierMultiplier(uint8 modelTier) external pure returns (uint256 multiplierBps) {
+        if (modelTier == 1) return TIER_1_MUL;
+        if (modelTier == 2) return TIER_2_MUL;
+        if (modelTier == 3) return TIER_3_MUL;
+        if (modelTier == 4) return TIER_4_MUL;
+        return TIER_1_MUL;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Epoch Bucket - Map epoch count to bucket index (view only).
+// -----------------------------------------------------------------------------
+
+contract YangGoEpochBucket {
+
+    function getBucket(uint256 epochCount) external pure returns (uint8 bucket) {
+        if (epochCount <= 10) return 1;
+        if (epochCount <= 100) return 2;
+        if (epochCount <= 500) return 3;
+        if (epochCount <= 1000) return 4;
+        return 5;
+    }
+
+    function getBucketLabel(uint8 bucket) external pure returns (string memory) {
+        if (bucket == 1) return "small";
+        if (bucket == 2) return "medium";
+        if (bucket == 3) return "large";
+        if (bucket == 4) return "xlarge";
+        if (bucket == 5) return "mega";
+        return "unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Domain Separator - EIP-712 style domain for off-chain signing.
+// -----------------------------------------------------------------------------
+
+contract YangGoDomainSeparator {
+
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public constant ATTESTATION_TYPEHASH = keccak256("Attest(uint256 runId,bool approved,uint256 nonce)");
+
+    constructor(bytes32 domainTypeHash, bytes32 nameHash, bytes32 versionHash, uint256 chainId, address verifyingContract) {
+        DOMAIN_SEPARATOR = keccak256(abi.encode(domainTypeHash, nameHash, versionHash, chainId, verifyingContract));
+    }
+
+    function getDomainSeparator() external view returns (bytes32) {
+        return DOMAIN_SEPARATOR;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Nonce - Per-run nonce for replay protection (optional).
+// -----------------------------------------------------------------------------
+
+contract YangGoRunNonce {
+
+    mapping(uint256 => uint256) private _nonce;
+
+    function getNonce(uint256 runId) external view returns (uint256) {
+        return _nonce[runId];
+    }
+
+    function incrementNonce(uint256 runId) external {
+        _nonce[runId]++;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Hash Utils - Pure helpers for hashing (no state).
+// -----------------------------------------------------------------------------
+
+contract YangGoHashUtils {
+
+    function hashDataset(bytes32 datasetRoot, bytes32 configHash) external pure returns (bytes32) {
+        return keccak256(abi.encodePacked(datasetRoot, configHash));
+    }
+
+    function hashRunMeta(bytes32 datasetHash, bytes32 configHash, uint8 modelTier, uint256 epochCount) external pure returns (bytes32) {
+        return keccak256(abi.encode(datasetHash, configHash, modelTier, epochCount));
+    }
