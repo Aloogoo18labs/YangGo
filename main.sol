@@ -1638,3 +1638,85 @@ contract YangGoSlashingStub {
 
     function requestSlash(address validator, uint256 amount, bytes32 reason) external {
         emit SlashRequested(validator, amount, reason, block.timestamp);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Treasury Stub - Optional treasury for protocol fees.
+// -----------------------------------------------------------------------------
+
+contract YangGoTreasuryStub {
+
+    address public immutable governor;
+    uint256 private _balance;
+
+    event Deposited(uint256 amount, address indexed from, uint256 atBlock);
+    event Withdrawn(uint256 amount, address indexed to, uint256 atBlock);
+
+    constructor(address governor_) {
+        governor = governor_;
+    }
+
+    receive() external payable {
+        _balance += msg.value;
+        emit Deposited(msg.value, msg.sender, block.timestamp);
+    }
+
+    function withdraw(address to, uint256 amount) external {
+        if (msg.sender != governor) revert();
+        if (amount > _balance) revert();
+        _balance -= amount;
+        (bool ok,) = to.call{value: amount}("");
+        if (!ok) revert();
+        emit Withdrawn(amount, to, block.timestamp);
+    }
+
+    function balance() external view returns (uint256) {
+        return _balance;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Paginator - Paginate runs with optional filters.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunPaginator {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function getPage(uint256 pageSize, uint256 pageIndex) external view returns (uint256[] memory runIds) {
+        uint256 total = core.runCount();
+        if (pageSize == 0 || pageIndex * pageSize >= total) return new uint256[](0);
+        uint256 start = pageIndex * pageSize;
+        uint256 end = start + pageSize;
+        if (end > total) end = total;
+        uint256 n = end - start;
+        runIds = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) runIds[i] = start + i;
+    }
+
+    function getPageCount(uint256 pageSize) external view returns (uint256) {
+        uint256 total = core.runCount();
+        if (pageSize == 0) return 0;
+        return (total + pageSize - 1) / pageSize;
+    }
+
+    function getRunsForPage(uint256 pageSize, uint256 pageIndex) external view returns (
+        uint256[] memory runIds,
+        address[] memory coordinators,
+        bool[] memory finalizes,
+        uint256[] memory totalAttestations
+    ) {
+        uint256 total = core.runCount();
+        if (pageSize == 0 || pageIndex * pageSize >= total) {
+            runIds = new uint256[](0);
+            coordinators = new address[](0);
+            finalizes = new bool[](0);
+            totalAttestations = new uint256[](0);
+            return (runIds, coordinators, finalizes, totalAttestations);
+        }
+        uint256 start = pageIndex * pageSize;
