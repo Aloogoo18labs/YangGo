@@ -1720,3 +1720,85 @@ contract YangGoRunPaginator {
             return (runIds, coordinators, finalizes, totalAttestations);
         }
         uint256 start = pageIndex * pageSize;
+        uint256 end = start + pageSize;
+        if (end > total) end = total;
+        uint256 n = end - start;
+        runIds = new uint256[](n);
+        coordinators = new address[](n);
+        finalizes = new bool[](n);
+        totalAttestations = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 runId = start + i;
+            (, , , , address coord, , bool fin, , uint256 totAtt, ) = core.getRun(runId);
+            runIds[i] = runId;
+            coordinators[i] = coord;
+            finalizes[i] = fin;
+            totalAttestations[i] = totAtt;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Quorum Calculator - Pure view quorum math.
+// -----------------------------------------------------------------------------
+
+contract YangGoQuorumCalculator {
+
+    uint256 public constant BPS_DENOM = 10000;
+    uint256 public constant QUORUM_BPS = 6600;
+
+    function quorumReached(uint256 totalAttestations, uint256 validatorCount) external pure returns (bool) {
+        if (validatorCount == 0) return false;
+        return (totalAttestations * BPS_DENOM) >= (validatorCount * QUORUM_BPS);
+    }
+
+    function positiveQuorumReached(uint256 positiveAttestations, uint256 totalAttestations) external pure returns (bool) {
+        if (totalAttestations == 0) return false;
+        return (positiveAttestations * BPS_DENOM) >= (totalAttestations * QUORUM_BPS);
+    }
+
+    function attestationsNeededForQuorum(uint256 validatorCount) external pure returns (uint256) {
+        return (validatorCount * QUORUM_BPS + BPS_DENOM - 1) / BPS_DENOM;
+    }
+
+    function positiveVotesNeededForPositiveQuorum(uint256 totalAttestations) external pure returns (uint256) {
+        return (totalAttestations * QUORUM_BPS + BPS_DENOM - 1) / BPS_DENOM;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Model Tier Labels - Human-readable tier names.
+// -----------------------------------------------------------------------------
+
+contract YangGoModelTierLabels {
+
+    function getTierName(uint8 tier) external pure returns (string memory) {
+        if (tier == 1) return "base";
+        if (tier == 2) return "mid";
+        if (tier == 3) return "large";
+        if (tier == 4) return "xl";
+        return "unknown";
+    }
+
+    function getTierIndex(string calldata name) external pure returns (uint8) {
+        if (keccak256(bytes(name)) == keccak256("base")) return 1;
+        if (keccak256(bytes(name)) == keccak256("mid")) return 2;
+        if (keccak256(bytes(name)) == keccak256("large")) return 3;
+        if (keccak256(bytes(name)) == keccak256("xl")) return 4;
+        return 0;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Age - Compute run age in seconds.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunAge {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function getRunAge(uint256 runId, uint256 asOfTimestamp) external view returns (uint256 ageSeconds) {
