@@ -1310,3 +1310,85 @@ contract YangGoRunFilter {
     }
 
     function filterByPositiveQuorum(uint256 maxResults) external view returns (uint256[] memory runIds) {
+        uint256 total = core.runCount();
+        uint256[] memory temp = new uint256[](maxResults);
+        uint256 count = 0;
+        for (uint256 i = 0; i < total && count < maxResults; i++) {
+            if (core.positiveQuorumReached(i)) {
+                temp[count] = i;
+                count++;
+            }
+        }
+        runIds = new uint256[](count);
+        for (uint256 j = 0; j < count; j++) runIds[j] = temp[j];
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Stats Aggregator - Aggregate stats across runs and validators.
+// -----------------------------------------------------------------------------
+
+contract YangGoStatsAggregator {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function totalRuns() external view returns (uint256) {
+        return core.runCount();
+    }
+
+    function totalValidators() external view returns (uint256) {
+        return core.validatorCount();
+    }
+
+    function getRunStatsSummary() external view returns (
+        uint256 total,
+        uint256 byTier1,
+        uint256 byTier2,
+        uint256 byTier3,
+        uint256 byTier4
+    ) {
+        total = core.runCount();
+        for (uint256 i = 0; i < total; i++) {
+            (, , uint8 modelTier, , , , , , , ) = core.getRun(i);
+            if (modelTier == 1) byTier1++;
+            else if (modelTier == 2) byTier2++;
+            else if (modelTier == 3) byTier3++;
+            else if (modelTier == 4) byTier4++;
+        }
+    }
+
+    function getValidatorListPaginated(uint256 offset, uint256 limit) external view returns (address[] memory addrs) {
+        uint256 total = core.validatorCount();
+        if (offset >= total) return new address[](0);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 n = end - offset;
+        addrs = new address[](n);
+        for (uint256 i = 0; i < n; i++) addrs[i] = core.getValidatorAt(offset + i);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Fee Tier Helper - Compute fee by model tier (view only).
+// -----------------------------------------------------------------------------
+
+contract YangGoFeeTierHelper {
+
+    uint256 public constant BASE_FEE = 0.01 ether;
+    uint256 public constant TIER_1_MUL = 10000;
+    uint256 public constant TIER_2_MUL = 12000;
+    uint256 public constant TIER_3_MUL = 15000;
+    uint256 public constant TIER_4_MUL = 20000;
+    uint256 public constant MUL_DENOM = 10000;
+
+    function computeFeeForTier(uint8 modelTier) external pure returns (uint256 feeWei) {
+        if (modelTier == 1) return (BASE_FEE * TIER_1_MUL) / MUL_DENOM;
+        if (modelTier == 2) return (BASE_FEE * TIER_2_MUL) / MUL_DENOM;
+        if (modelTier == 3) return (BASE_FEE * TIER_3_MUL) / MUL_DENOM;
+        if (modelTier == 4) return (BASE_FEE * TIER_4_MUL) / MUL_DENOM;
+        return BASE_FEE;
+    }
