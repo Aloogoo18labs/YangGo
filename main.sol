@@ -654,3 +654,85 @@ contract YangGo {
         registrationFeeWei = newFeeWei;
     }
 
+    function setTrainingPaused(bool paused_) external onlyGovernor {
+        trainingPaused = paused_;
+        if (paused_) emit TrainingPaused(block.timestamp, msg.sender);
+        else emit TrainingResumed(block.timestamp, msg.sender);
+    }
+
+    function setFinalizeDelay(uint256 newDelaySeconds) external onlyGovernor {
+        if (newDelaySeconds < MIN_FINALIZE_DELAY || newDelaySeconds > MAX_FINALIZE_DELAY) revert YangGo_InvalidEpochCount();
+        finalizeDelaySeconds = newDelaySeconds;
+    }
+
+    function distributeReward(address recipient, uint256 amount) external onlyGovernor nonReentrant {
+        if (recipient == address(0)) revert YangGo_ZeroAddress();
+        (bool sent,) = recipient.call{value: amount}("");
+        if (!sent) revert YangGo_TransferFailed();
+        emit RewardDistributed(recipient, amount, block.timestamp);
+    }
+
+    // -------------------------------------------------------------------------
+    // FALLBACK
+    // -------------------------------------------------------------------------
+
+    receive() external payable {
+        emit FallbackDeposit(msg.sender, msg.value);
+    }
+
+    // -------------------------------------------------------------------------
+    // ADDITIONAL VIEW HELPERS (batch and stats)
+    // -------------------------------------------------------------------------
+
+    function getRunBatch(uint256 fromId, uint256 toId) external view returns (
+        uint256[] memory runIds,
+        bytes32[] memory datasetHashes,
+        bytes32[] memory configHashes,
+        uint8[] memory modelTiers,
+        uint256[] memory epochCounts,
+        address[] memory coordinators,
+        uint256[] memory registeredAts,
+        bool[] memory finalizes,
+        uint256[] memory positiveAttestations,
+        uint256[] memory totalAttestations,
+        uint256[] memory checkpointCounts
+    ) {
+        uint256 total = _runs.length;
+        if (fromId >= total) {
+            runIds = new uint256[](0);
+            datasetHashes = new bytes32[](0);
+            configHashes = new bytes32[](0);
+            modelTiers = new uint8[](0);
+            epochCounts = new uint256[](0);
+            coordinators = new address[](0);
+            registeredAts = new uint256[](0);
+            finalizes = new bool[](0);
+            positiveAttestations = new uint256[](0);
+            totalAttestations = new uint256[](0);
+            checkpointCounts = new uint256[](0);
+            return (runIds, datasetHashes, configHashes, modelTiers, epochCounts, coordinators, registeredAts, finalizes, positiveAttestations, totalAttestations, checkpointCounts);
+        }
+        if (toId >= total) toId = total - 1;
+        if (fromId > toId) {
+            runIds = new uint256[](0);
+            datasetHashes = new bytes32[](0);
+            configHashes = new bytes32[](0);
+            modelTiers = new uint8[](0);
+            epochCounts = new uint256[](0);
+            coordinators = new address[](0);
+            registeredAts = new uint256[](0);
+            finalizes = new bool[](0);
+            positiveAttestations = new uint256[](0);
+            totalAttestations = new uint256[](0);
+            checkpointCounts = new uint256[](0);
+            return (runIds, datasetHashes, configHashes, modelTiers, epochCounts, coordinators, registeredAts, finalizes, positiveAttestations, totalAttestations, checkpointCounts);
+        }
+        uint256 n = toId - fromId + 1;
+        runIds = new uint256[](n);
+        datasetHashes = new bytes32[](n);
+        configHashes = new bytes32[](n);
+        modelTiers = new uint8[](n);
+        epochCounts = new uint256[](n);
+        coordinators = new address[](n);
+        registeredAts = new uint256[](n);
+        finalizes = new bool[](n);
