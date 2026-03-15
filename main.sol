@@ -900,3 +900,85 @@ contract YangGoGradientSnapshot {
         if (finalized) revert YGS_RunFinalized();
 
         _snapshots[runId][epochIndex] = EpochSnapshot({
+            gradientNormHash: gradientNormHash,
+            recordedAt: block.timestamp,
+            recorder: msg.sender
+        });
+        uint256 count = _snapshotCountByRun[runId];
+        if (epochIndex >= count) _snapshotCountByRun[runId] = epochIndex + 1;
+        emit SnapshotRecorded(runId, epochIndex, gradientNormHash, msg.sender, block.number);
+    }
+
+    function recordSnapshotBatch(uint256 runId, uint256[] calldata epochIndices, bytes32[] calldata gradientNormHashes) external nonReentrant {
+        if (epochIndices.length != gradientNormHashes.length) revert YGS_ArrayLengthMismatch();
+        (,,,, address coordinator,, bool finalized,,,,) = IYangGoView(yangGoCore).getRun(runId);
+        if (msg.sender != coordinator) revert YGS_NotCoordinator();
+        if (finalized) revert YGS_RunFinalized();
+
+        for (uint256 i = 0; i < epochIndices.length; i++) {
+            if (gradientNormHashes[i] == bytes32(0)) revert YGS_ZeroHash();
+            _snapshots[runId][epochIndices[i]] = EpochSnapshot({
+                gradientNormHash: gradientNormHashes[i],
+                recordedAt: block.timestamp,
+                recorder: msg.sender
+            });
+            uint256 c = _snapshotCountByRun[runId];
+            if (epochIndices[i] >= c) _snapshotCountByRun[runId] = epochIndices[i] + 1;
+        }
+        emit SnapshotBatchRecorded(runId, epochIndices.length > 0 ? epochIndices[0] : 0, epochIndices.length, msg.sender, block.number);
+    }
+
+    function getSnapshot(uint256 runId, uint256 epochIndex) external view returns (bytes32 gradientNormHash, uint256 recordedAt, address recorder) {
+        EpochSnapshot storage s = _snapshots[runId][epochIndex];
+        return (s.gradientNormHash, s.recordedAt, s.recorder);
+    }
+
+    function snapshotCountForRun(uint256 runId) external view returns (uint256) {
+        return _snapshotCountByRun[runId];
+    }
+}
+
+interface IYangGoView {
+    function getRun(uint256 runId) external view returns (
+        bytes32 datasetHash,
+        bytes32 configHash,
+        uint8 modelTier,
+        uint256 epochCount,
+        address coordinator,
+        uint256 registeredAt,
+        bool finalized,
+        uint256 positiveAttestations,
+        uint256 totalAttestations,
+        uint256 checkpointCount
+    );
+    function runCount() external view returns (uint256);
+    function validatorCount() external view returns (uint256);
+    function getValidatorAt(uint256 index) external view returns (address);
+    function getRunsByCoordinator(address coordinator) external view returns (uint256[] memory);
+    function quorumReached(uint256 runId) external view returns (bool);
+    function positiveQuorumReached(uint256 runId) external view returns (bool);
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Query - Off-chain and front-end helper for batch run inspection.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunQuery {
+
+    IYangGoView public immutable core;
+
+    struct RunSummary {
+        uint256 runId;
+        bytes32 datasetHash;
+        uint8 modelTier;
+        uint256 epochCount;
+        address coordinator;
+        uint256 registeredAt;
+        bool finalized;
+        uint256 positiveAttestations;
+        uint256 totalAttestations;
+        uint256 checkpointCount;
+    }
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
