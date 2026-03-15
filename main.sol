@@ -736,3 +736,85 @@ contract YangGo {
         coordinators = new address[](n);
         registeredAts = new uint256[](n);
         finalizes = new bool[](n);
+        positiveAttestations = new uint256[](n);
+        totalAttestations = new uint256[](n);
+        checkpointCounts = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 runId = fromId + i;
+            TrainingRun storage r = _runs[runId];
+            runIds[i] = runId;
+            datasetHashes[i] = r.datasetHash;
+            configHashes[i] = r.configHash;
+            modelTiers[i] = r.modelTier;
+            epochCounts[i] = r.epochCount;
+            coordinators[i] = r.coordinator;
+            registeredAts[i] = r.registeredAt;
+            finalizes[i] = r.finalized;
+            positiveAttestations[i] = r.positiveAttestations;
+            totalAttestations[i] = r.totalAttestations;
+            checkpointCounts[i] = r.checkpoints.length;
+        }
+    }
+
+    function getCheckpointsBatch(uint256 runId, uint256 fromIndex, uint256 toIndex) external view returns (bytes32[] memory hashes) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        uint256 total = r.checkpoints.length;
+        if (fromIndex >= total) return new bytes32[](0);
+        if (toIndex >= total) toIndex = total - 1;
+        if (fromIndex > toIndex) return new bytes32[](0);
+        uint256 n = toIndex - fromIndex + 1;
+        hashes = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) hashes[i] = r.checkpoints[fromIndex + i];
+    }
+
+    function countRunsByModelTier(uint8 tier) external view returns (uint256 count) {
+        for (uint256 i = 0; i < _runs.length; i++) {
+            if (_runs[i].modelTier == tier) count++;
+        }
+    }
+
+    function countFinalizedRuns() external view returns (uint256 count) {
+        for (uint256 i = 0; i < _runs.length; i++) {
+            if (_runs[i].finalized) count++;
+        }
+    }
+
+    function countRunsWithPositiveQuorum() external view returns (uint256 count) {
+        uint256 activeCount = _validatorList.length;
+        for (uint256 i = 0; i < _runs.length; i++) {
+            TrainingRun storage r = _runs[i];
+            if (r.totalAttestations == 0) continue;
+            if ((r.totalAttestations * BPS_DENOM) < (activeCount * QUORUM_BPS)) continue;
+            if ((r.positiveAttestations * BPS_DENOM) >= (r.totalAttestations * QUORUM_BPS)) count++;
+        }
+    }
+
+    function getLatestRunId() external view returns (uint256) {
+        if (_runs.length == 0) revert YangGo_InvalidRunId();
+        return _runs.length - 1;
+    }
+
+    function isCoordinatorWhitelisted(address account) external view returns (bool) {
+        return coordinatorWhitelist[account];
+    }
+
+    function getConfigHash(uint256 runId) external view returns (bytes32) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].configHash;
+    }
+
+    function getDatasetHash(uint256 runId) external view returns (bytes32) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].datasetHash;
+    }
+
+    function getCoordinator(uint256 runId) external view returns (address) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].coordinator;
+    }
+
+    function isRunFinalized(uint256 runId) external view returns (bool) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].finalized;
+    }
