@@ -1146,3 +1146,85 @@ contract YangGoEpochTracker {
     IYangGoView public immutable core;
     uint256 private _lock;
     mapping(uint256 => mapping(uint256 => bool)) private _epochComplete;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    modifier nonReentrant() {
+        if (_lock != 0) revert YGET_Reentrancy();
+        _lock = 1;
+        _;
+        _lock = 0;
+    }
+
+    function markEpochComplete(uint256 runId, uint256 epochIndex) external nonReentrant {
+        (,,,, address coordinator,, bool finalized,,, uint256 checkpointCount) = core.getRun(runId);
+        if (msg.sender != coordinator) revert YGET_NotCoordinator();
+        if (finalized) revert YGET_RunFinalized();
+        if (epochIndex >= 10000) revert YGET_EpochOutOfRange();
+        _epochComplete[runId][epochIndex] = true;
+        emit EpochMarkedComplete(runId, epochIndex, msg.sender, block.number);
+    }
+
+    function isEpochComplete(uint256 runId, uint256 epochIndex) external view returns (bool) {
+        return _epochComplete[runId][epochIndex];
+    }
+
+    function countCompleteEpochs(uint256 runId, uint256 maxEpoch) external view returns (uint256 count) {
+        for (uint256 i = 0; i < maxEpoch; i++) {
+            if (_epochComplete[runId][i]) count++;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Dataset Registry - Optional registry of dataset hashes with metadata.
+// -----------------------------------------------------------------------------
+
+contract YangGoDatasetRegistry {
+
+    event DatasetRegistered(bytes32 indexed datasetHash, string label, address indexed registrant, uint256 atBlock);
+    event DatasetLabelUpdated(bytes32 indexed datasetHash, string newLabel, uint256 atBlock);
+
+    error YGDR_ZeroHash();
+    error YGDR_NotRegistrant();
+    error YGDR_Reentrancy();
+
+    struct DatasetMeta {
+        string label;
+        address registrant;
+        uint256 registeredAt;
+    }
+
+    mapping(bytes32 => DatasetMeta) private _meta;
+    bytes32[] private _datasetHashes;
+    uint256 private _lock;
+
+    modifier nonReentrant() {
+        if (_lock != 0) revert YGDR_Reentrancy();
+        _lock = 1;
+        _;
+        _lock = 0;
+    }
+
+    function registerDataset(bytes32 datasetHash, string calldata label) external nonReentrant {
+        if (datasetHash == bytes32(0)) revert YGDR_ZeroHash();
+        if (_meta[datasetHash].registrant != address(0)) revert YGDR_NotRegistrant();
+        _meta[datasetHash] = DatasetMeta({ label: label, registrant: msg.sender, registeredAt: block.timestamp });
+        _datasetHashes.push(datasetHash);
+        emit DatasetRegistered(datasetHash, label, msg.sender, block.timestamp);
+    }
+
+    function updateDatasetLabel(bytes32 datasetHash, string calldata newLabel) external nonReentrant {
+        if (_meta[datasetHash].registrant != msg.sender) revert YGDR_NotRegistrant();
+        _meta[datasetHash].label = newLabel;
+        emit DatasetLabelUpdated(datasetHash, newLabel, block.timestamp);
+    }
+
+    function getDatasetMeta(bytes32 datasetHash) external view returns (string memory label, address registrant, uint256 registeredAt) {
+        DatasetMeta storage m = _meta[datasetHash];
+        return (m.label, m.registrant, m.registeredAt);
+    }
+
+    function getAllDatasetHashes() external view returns (bytes32[] memory) {
