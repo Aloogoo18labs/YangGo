@@ -1884,3 +1884,75 @@ contract YangGoConfigHashRegistry {
         return _configHashes.length;
     }
 }
+
+// -----------------------------------------------------------------------------
+// YangGo Version Info - Static version and domain info.
+// -----------------------------------------------------------------------------
+
+contract YangGoVersionInfo {
+
+    uint256 public constant VERSION = 2;
+    bytes32 public constant DOMAIN = keccak256("YangGo.TrainingRun.v2");
+    string public constant LABEL = "YangGo AI Training Registry v2";
+
+    function getVersion() external pure returns (uint256) {
+        return VERSION;
+    }
+
+    function getDomain() external pure returns (bytes32) {
+        return DOMAIN;
+    }
+
+    function getLabel() external pure returns (string memory) {
+        return LABEL;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Existence Checker - Lightweight run existence and bounds.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunExistenceChecker {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function exists(uint256 runId) external view returns (bool) {
+        return runId < core.runCount();
+    }
+
+    function totalRuns() external view returns (uint256) {
+        return core.runCount();
+    }
+
+    function isValidRunId(uint256 runId) external view returns (bool) {
+        return runId < core.runCount();
+    }
+
+    function getBounds() external view returns (uint256 minRunId, uint256 maxRunId, uint256 count) {
+        count = core.runCount();
+        minRunId = 0;
+        maxRunId = count == 0 ? 0 : count - 1;
+    }
+
+    function getFirstRunId() external view returns (uint256) {
+        return 0;
+    }
+
+    function getLastRunId() external view returns (uint256) {
+        uint256 c = core.runCount();
+        return c == 0 ? 0 : c - 1;
+    }
+
+    function runCountView() external view returns (uint256) {
+        return core.runCount();
+    }
+
+    /// @dev Returns whether any runs exist
+    function hasRuns() external view returns (bool) {
+        return core.runCount() > 0;
+    }
+}
