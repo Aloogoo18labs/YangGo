@@ -982,3 +982,85 @@ contract YangGoRunQuery {
 
     constructor(address core_) {
         core = IYangGoView(core_);
+    }
+
+    function getRunSummaries(uint256 fromId, uint256 limit) external view returns (RunSummary[] memory out) {
+        uint256 total = core.runCount();
+        if (fromId >= total) return new RunSummary[](0);
+        uint256 end = fromId + limit;
+        if (end > total) end = total;
+        uint256 n = end - fromId;
+        out = new RunSummary[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 runId = fromId + i;
+            (
+                bytes32 datasetHash,
+                bytes32 configHash,
+                uint8 modelTier,
+                uint256 epochCount,
+                address coordinator,
+                uint256 registeredAt,
+                bool finalized,
+                uint256 positiveAttestations,
+                uint256 totalAttestations,
+                uint256 checkpointCount
+            ) = core.getRun(runId);
+            out[i] = RunSummary({
+                runId: runId,
+                datasetHash: datasetHash,
+                modelTier: modelTier,
+                epochCount: epochCount,
+                coordinator: coordinator,
+                registeredAt: registeredAt,
+                finalized: finalized,
+                positiveAttestations: positiveAttestations,
+                totalAttestations: totalAttestations,
+                checkpointCount: checkpointCount
+            });
+        }
+    }
+
+    function getRunSummariesForCoordinator(address coordinator, uint256 maxResults) external view returns (RunSummary[] memory out) {
+        uint256[] memory runIds = core.getRunsByCoordinator(coordinator);
+        uint256 n = runIds.length;
+        if (n > maxResults) n = maxResults;
+        out = new RunSummary[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 runId = runIds[i];
+            (
+                bytes32 datasetHash,
+                bytes32 configHash,
+                uint8 modelTier,
+                uint256 epochCount,
+                address coord,
+                uint256 registeredAt,
+                bool finalized,
+                uint256 positiveAttestations,
+                uint256 totalAttestations,
+                uint256 checkpointCount
+            ) = core.getRun(runId);
+            out[i] = RunSummary({
+                runId: runId,
+                datasetHash: datasetHash,
+                modelTier: modelTier,
+                epochCount: epochCount,
+                coordinator: coord,
+                registeredAt: registeredAt,
+                finalized: finalized,
+                positiveAttestations: positiveAttestations,
+                totalAttestations: totalAttestations,
+                checkpointCount: checkpointCount
+            });
+        }
+    }
+
+    function getRunsWithQuorum(uint256 fromId, uint256 limit) external view returns (uint256[] memory runIds, bool[] memory positiveQuorum) {
+        uint256 total = core.runCount();
+        if (fromId >= total) {
+            runIds = new uint256[](0);
+            positiveQuorum = new bool[](0);
+            return (runIds, positiveQuorum);
+        }
+        uint256 end = fromId + limit;
+        if (end > total) end = total;
+        uint256 n = end - fromId;
