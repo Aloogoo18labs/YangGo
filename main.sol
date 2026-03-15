@@ -1474,3 +1474,85 @@ contract YangGoHashUtils {
     function hashRunMeta(bytes32 datasetHash, bytes32 configHash, uint8 modelTier, uint256 epochCount) external pure returns (bytes32) {
         return keccak256(abi.encode(datasetHash, configHash, modelTier, epochCount));
     }
+
+    function hashCheckpointBatch(bytes32[] calldata checkpointHashes) external pure returns (bytes32) {
+        return keccak256(abi.encodePacked(checkpointHashes));
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Index - Index runs by tag and by config hash (read-only after init).
+// -----------------------------------------------------------------------------
+
+contract YangGoRunIndex {
+
+    IYangGoView public immutable core;
+    mapping(bytes32 => uint256[]) private _runIdsByTag;
+    mapping(bytes32 => uint256[]) private _runIdsByConfigHash;
+    bytes32[] private _knownTags;
+    bytes32[] private _knownConfigHashes;
+
+    event TagIndexed(bytes32 indexed tag, uint256 runId, uint256 atBlock);
+    event ConfigIndexed(bytes32 indexed configHash, uint256 runId, uint256 atBlock);
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function indexRunByTag(uint256 runId, bytes32 tag) external {
+        (,,,,,, bool finalized,,,) = core.getRun(runId);
+        if (_runIdsByTag[tag].length == 0) _knownTags.push(tag);
+        _runIdsByTag[tag].push(runId);
+        emit TagIndexed(tag, runId, block.number);
+    }
+
+    function indexRunByConfig(bytes32 configHash, uint256 runId) external {
+        (,,,,,, bool finalized,,,) = core.getRun(runId);
+        if (_runIdsByConfigHash[configHash].length == 0) _knownConfigHashes.push(configHash);
+        _runIdsByConfigHash[configHash].push(runId);
+        emit ConfigIndexed(configHash, runId, block.number);
+    }
+
+    function getRunIdsByTag(bytes32 tag) external view returns (uint256[] memory) {
+        return _runIdsByTag[tag];
+    }
+
+    function getRunIdsByConfigHash(bytes32 configHash) external view returns (uint256[] memory) {
+        return _runIdsByConfigHash[configHash];
+    }
+
+    function getKnownTags() external view returns (bytes32[] memory) {
+        return _knownTags;
+    }
+
+    function getKnownConfigHashes() external view returns (bytes32[] memory) {
+        return _knownConfigHashes;
+    }
+
+    function tagCount() external view returns (uint256) {
+        return _knownTags.length;
+    }
+
+    function configHashCount() external view returns (uint256) {
+        return _knownConfigHashes.length;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Time Locks - Optional time-lock for governor actions (stub).
+// -----------------------------------------------------------------------------
+
+contract YangGoTimeLocks {
+
+    uint256 public constant MIN_DELAY = 1 days;
+    uint256 public constant MAX_DELAY = 30 days;
+
+    mapping(bytes32 => uint256) private _lockedUntil;
+    mapping(bytes32 => bytes) private _lockedPayload;
+
+    event ActionScheduled(bytes32 indexed actionId, uint256 executeAfter, uint256 atBlock);
+    event ActionExecuted(bytes32 indexed actionId, uint256 atBlock);
+
+    function schedule(bytes32 actionId, uint256 delaySeconds, bytes calldata payload) external {
+        if (delaySeconds < MIN_DELAY || delaySeconds > MAX_DELAY) revert();
+        uint256 executeAfter = block.timestamp + delaySeconds;
