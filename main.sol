@@ -818,3 +818,85 @@ contract YangGo {
         if (runId >= _runs.length) revert YangGo_InvalidRunId();
         return _runs[runId].finalized;
     }
+
+    function getAttestationStats(uint256 runId) external view returns (uint256 positive, uint256 total) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        return (r.positiveAttestations, r.totalAttestations);
+    }
+
+    function computeQuorumBps(uint256 runId) external view returns (uint256 attestationBps, uint256 positiveBps) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        TrainingRun storage r = _runs[runId];
+        uint256 activeCount = _validatorList.length;
+        if (activeCount == 0) return (0, 0);
+        attestationBps = (r.totalAttestations * BPS_DENOM) / activeCount;
+        if (r.totalAttestations == 0) positiveBps = 0;
+        else positiveBps = (r.positiveAttestations * BPS_DENOM) / r.totalAttestations;
+    }
+
+    function getRunRegisteredAt(uint256 runId) external view returns (uint256) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].registeredAt;
+    }
+
+    function getRunEpochCount(uint256 runId) external view returns (uint256) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].epochCount;
+    }
+
+    function getRunModelTier(uint256 runId) external view returns (uint8) {
+        if (runId >= _runs.length) revert YangGo_InvalidRunId();
+        return _runs[runId].modelTier;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Gradient Snapshot Extension
+// Stores per-run gradient norm attestations for verifiable training metrics.
+// -----------------------------------------------------------------------------
+
+contract YangGoGradientSnapshot {
+
+    event SnapshotRecorded(uint256 indexed runId, uint256 epochIndex, bytes32 gradientNormHash, address indexed recorder, uint256 atBlock);
+    event SnapshotBatchRecorded(uint256 indexed runId, uint256 startEpoch, uint256 count, address indexed recorder, uint256 atBlock);
+
+    error YGS_NotCoordinator();
+    error YGS_InvalidRunId();
+    error YGS_RunFinalized();
+    error YGS_ZeroHash();
+    error YGS_EpochOutOfRange();
+    error YGS_ArrayLengthMismatch();
+    error YGS_Reentrancy();
+    error YGS_Unauthorized();
+
+    address public immutable yangGoCore;
+    uint256 private _lock;
+
+    struct EpochSnapshot {
+        bytes32 gradientNormHash;
+        uint256 recordedAt;
+        address recorder;
+    }
+
+    mapping(uint256 => mapping(uint256 => EpochSnapshot)) private _snapshots;
+    mapping(uint256 => uint256) private _snapshotCountByRun;
+
+    constructor(address core_) {
+        yangGoCore = core_;
+    }
+
+    modifier nonReentrant() {
+        if (_lock != 0) revert YGS_Reentrancy();
+        _lock = 1;
+        _;
+        _lock = 0;
+    }
+
+    function recordSnapshot(uint256 runId, uint256 epochIndex, bytes32 gradientNormHash) external nonReentrant {
+        if (gradientNormHash == bytes32(0)) revert YGS_ZeroHash();
+        (,,,, address coordinator,, bool finalized,,,,) = IYangGoView(yangGoCore).getRun(runId);
+        if (msg.sender != coordinator) revert YGS_NotCoordinator();
+        if (finalized) revert YGS_RunFinalized();
+
+        _snapshots[runId][epochIndex] = EpochSnapshot({
