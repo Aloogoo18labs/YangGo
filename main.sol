@@ -1228,3 +1228,85 @@ contract YangGoDatasetRegistry {
     }
 
     function getAllDatasetHashes() external view returns (bytes32[] memory) {
+        return _datasetHashes;
+    }
+
+    function datasetCount() external view returns (uint256) {
+        return _datasetHashes.length;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Checkpoint Verifier - Optional stub for future checkpoint verification.
+// -----------------------------------------------------------------------------
+
+contract YangGoCheckpointVerifier {
+
+    event CheckpointVerified(uint256 indexed runId, uint256 checkpointIndex, bool valid, uint256 atBlock);
+
+    error YGCV_InvalidRunId();
+    error YGCV_IndexOutOfRange();
+
+    address public immutable core;
+
+    constructor(address core_) {
+        core = core_;
+    }
+
+    function verifyCheckpointExists(uint256 runId, uint256 checkpointIndex) external view returns (bool exists, bytes32 checkpointHash) {
+        (,,,,, uint256 registeredAt, bool finalized, uint256 positiveAttestations, uint256 totalAttestations, uint256 checkpointCount) = IYangGoFull(core).getRun(runId);
+        if (runId >= IYangGoFull(core).runCount()) revert YGCV_InvalidRunId();
+        if (checkpointIndex >= checkpointCount) revert YGCV_IndexOutOfRange();
+        checkpointHash = IYangGoFull(core).getCheckpoint(runId, checkpointIndex);
+        exists = checkpointHash != bytes32(0);
+    }
+}
+
+interface IYangGoFull is IYangGoView {
+    function getCheckpoint(uint256 runId, uint256 index) external view returns (bytes32);
+}
+
+// -----------------------------------------------------------------------------
+// YangGo Run Filter - Filter runs by tier, finalized status, time range.
+// -----------------------------------------------------------------------------
+
+contract YangGoRunFilter {
+
+    IYangGoView public immutable core;
+
+    constructor(address core_) {
+        core = IYangGoView(core_);
+    }
+
+    function filterByModelTier(uint8 tier, uint256 maxResults) external view returns (uint256[] memory runIds) {
+        uint256 total = core.runCount();
+        uint256[] memory temp = new uint256[](total);
+        uint256 count = 0;
+        for (uint256 i = 0; i < total && count < maxResults; i++) {
+            (, , uint8 modelTier, , , , bool finalized, , , ) = core.getRun(i);
+            if (modelTier == tier) {
+                temp[count] = i;
+                count++;
+            }
+        }
+        runIds = new uint256[](count);
+        for (uint256 j = 0; j < count; j++) runIds[j] = temp[j];
+    }
+
+    function filterFinalized(uint256 fromId, uint256 limit) external view returns (uint256[] memory runIds) {
+        uint256 total = core.runCount();
+        if (fromId >= total) return new uint256[](0);
+        uint256[] memory temp = new uint256[](limit);
+        uint256 count = 0;
+        for (uint256 i = fromId; i < total && count < limit; i++) {
+            (, , , , , , bool finalized, , , ) = core.getRun(i);
+            if (finalized) {
+                temp[count] = i;
+                count++;
+            }
+        }
+        runIds = new uint256[](count);
+        for (uint256 j = 0; j < count; j++) runIds[j] = temp[j];
+    }
+
+    function filterByPositiveQuorum(uint256 maxResults) external view returns (uint256[] memory runIds) {
